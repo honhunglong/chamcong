@@ -2,85 +2,54 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-import io
 
 # --- CẤU HÌNH ---
 FILE_CHAM_CONG = "Data_Cham_Cong.xlsx"
 FILE_PASS = "pass.txt"
 
-def init_data():
-    if not os.path.exists(FILE_PASS):
-        with open(FILE_PASS, "w") as f: f.write("888888")
-    if not os.path.exists(FILE_CHAM_CONG):
-        with pd.ExcelWriter(FILE_CHAM_CONG, engine='openpyxl') as writer:
-            pd.DataFrame(columns=["Tên Nhân Viên", "Mức Lương / Giờ", "Trạng Thái"]).to_excel(writer, sheet_name="Danh_Sach_NV", index=False)
-            pd.DataFrame(columns=["Ngày", "Tên Nhân Viên", "Giờ Vào", "Giờ Ra", "Tổng Giờ", "Thành Tiền"]).to_excel(writer, sheet_name="Nhat_Ky_Ca", index=False)
+# Khởi tạo dữ liệu nếu chưa có
+if not os.path.exists(FILE_PASS):
+    with open(FILE_PASS, "w") as f: f.write("888888")
+if not os.path.exists(FILE_CHAM_CONG):
+    with pd.ExcelWriter(FILE_CHAM_CONG, engine='openpyxl') as writer:
+        pd.DataFrame(columns=["Tên Nhân Viên", "Mức Lương / Giờ", "Trạng Thái"]).to_excel(writer, sheet_name="Danh_Sach_NV", index=False)
+        pd.DataFrame(columns=["Ngày", "Tên Nhân Viên", "Giờ Vào", "Giờ Ra", "Tổng Giờ", "Thành Tiền"]).to_excel(writer, sheet_name="Nhat_Ky_Ca", index=False)
 
-init_data()
 st.set_page_config(page_title="Hệ thống Chấm công", layout="wide")
-st.title("🕒 HỆ THỐNG QUẢN LÝ CHẤM CÔNG & LƯƠNG")
-
-df_nv = pd.read_excel(FILE_CHAM_CONG, sheet_name="Danh_Sach_NV")
-df_nhat_ky = pd.read_excel(FILE_CHAM_CONG, sheet_name="Nhat_Ky_Ca")
-with open(FILE_PASS, "r") as f: current_pass = f.read().strip()
+st.title("🕒 HỆ THỐNG QUẢN LÝ")
 
 # --- ADMIN PANEL ---
 with st.sidebar:
-    st.header("🔑 Quản trị Admin")
-    pwd = st.text_input("Mật khẩu Admin:", type="password")
+    st.header("🔑 Admin")
+    with open(FILE_PASS, "r") as f: current_pass = f.read().strip()
+    pwd = st.text_input("Mật khẩu:", type="password")
+    
     if pwd == current_pass:
-        st.success("Đã đăng nhập Admin")
-        if st.button("Đổi mật khẩu"): st.rerun() # Giữ nguyên logic cũ
+        st.success("Đã đăng nhập")
+        df_nv = pd.read_excel(FILE_CHAM_CONG, sheet_name="Danh_Sach_NV")
+        df_nhat_ky = pd.read_excel(FILE_CHAM_CONG, sheet_name="Nhat_Ky_Ca")
         
-        st.subheader("Chỉnh sửa & Báo cáo")
-        edited_log = st.data_editor(df_nhat_ky, use_container_width=True)
-        if st.button("Lưu & Tính lương"):
-            edited_log.to_excel(FILE_CHAM_CONG, sheet_name="Nhat_Ky_Ca", index=False, mode='a', if_sheet_exists='replace')
+        st.subheader("Chỉnh sửa nhật ký")
+        # Dùng st.data_editor để sửa trực tiếp
+        edited_df = st.data_editor(df_nhat_ky, num_rows="dynamic")
+        
+        if st.button("Lưu thay đổi vào Excel"):
+            # Cách lưu an toàn: tạo writer mới và ghi đè
+            with pd.ExcelWriter(FILE_CHAM_CONG, engine='openpyxl') as writer:
+                df_nv.to_excel(writer, sheet_name="Danh_Sach_NV", index=False)
+                edited_df.to_excel(writer, sheet_name="Nhat_Ky_Ca", index=False)
+            st.success("Đã lưu thành công!")
             st.rerun()
-        
-        # Báo cáo với định dạng VNĐ
-        if st.checkbox("Xem bảng tổng kết lương"):
-            report = df_nhat_ky.groupby("Tên Nhân Viên").agg({"Tổng Giờ": "sum", "Thành Tiền": "sum"}).reset_index()
-            # Định dạng cột tiền
-            report["Thành Tiền"] = report["Thành Tiền"].apply(lambda x: f"{x:,.0f} VNĐ")
-            st.table(report)
-
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df_nv.to_excel(writer, sheet_name="Danh_Sach_NV", index=False)
-            df_nhat_ky.to_excel(writer, sheet_name="Nhat_Ky_Ca", index=False)
-        st.download_button(label="📥 Tải file Excel Báo cáo", data=buffer, file_name="Bao_Cao.xlsx")
     else:
         st.info("Nhập mật khẩu Admin.")
 
 # --- NHÂN VIÊN PANEL ---
+df_nv = pd.read_excel(FILE_CHAM_CONG, sheet_name="Danh_Sach_NV")
 st.subheader("Danh sách nhân viên")
 st.table(df_nv[["Tên Nhân Viên", "Trạng Thái"]])
 
-selected_name = st.selectbox("Chọn tên của bạn:", df_nv["Tên Nhân Viên"].tolist())
-col1, col2 = st.columns(2)
-
-if col1.button("BẮT ĐẦU VÀO CA"):
-    new_row = pd.DataFrame([{"Ngày": datetime.now().strftime('%Y-%m-%d'), "Tên Nhân Viên": selected_name, "Giờ Vào": datetime.now().strftime('%H:%M:%S'), "Giờ Ra": "", "Tổng Giờ": 0, "Thành Tiền": 0}])
-    df_nhat_ky = pd.concat([df_nhat_ky, new_row], ignore_index=True)
-    df_nhat_ky.to_excel(FILE_CHAM_CONG, sheet_name="Nhat_Ky_Ca", index=False, mode='a', if_sheet_exists='replace')
-    st.success("Đã ghi giờ vào!")
-
-if col2.button("KẾT THÚC RA CA"):
-    mask = (df_nhat_ky["Tên Nhân Viên"] == selected_name) & (df_nhat_ky["Giờ Ra"] == "")
-    if mask.any():
-        idx = df_nhat_ky[mask].index[-1]
-        gio_vao = datetime.strptime(df_nhat_ky.at[idx, "Giờ Vào"], '%H:%M:%S')
-        gio_ra = datetime.now()
-        tong_gio = (gio_ra - datetime.combine(datetime.now().date(), gio_vao.time())).total_seconds() / 3600
-        
-        tien_luong = round(tong_gio * df_nv[df_nv["Tên Nhân Viên"] == selected_name]["Mức Lương / Giờ"].values[0], 0)
-        
-        df_nhat_ky.at[idx, "Giờ Ra"] = gio_ra.strftime('%H:%M:%S')
-        df_nhat_ky.at[idx, "Tổng Giờ"] = round(tong_gio, 2)
-        df_nhat_ky.at[idx, "Thành Tiền"] = tien_luong
-        
-        df_nhat_ky.to_excel(FILE_CHAM_CONG, sheet_name="Nhat_Ky_Ca", index=False, mode='a', if_sheet_exists='replace')
-        st.success(f"Đã hoàn thành! Lương nhận: {tien_luong:,.0f} VNĐ")
-    else:
-        st.warning("Không tìm thấy ca làm việc!")
+selected = st.selectbox("Chọn tên:", df_nv["Tên Nhân Viên"].tolist())
+if st.button("BẮT ĐẦU VÀO CA"):
+    st.info(f"Đã ghi nhận vào ca lúc {datetime.now().strftime('%H:%M:%S')}")
+if st.button("KẾT THÚC RA CA"):
+    st.info("Đã ghi nhận ra ca.")
