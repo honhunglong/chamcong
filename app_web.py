@@ -2,61 +2,72 @@ import streamlit as st
 import pandas as pd
 import os
 
-# Cấu hình trang web
-st.set_page_config(page_title="Hệ thống Chấm công", layout="centered")
+st.set_page_config(page_title="Hệ thống Chấm công", layout="wide")
 
 FILE_CHAM_CONG = "Data_Cham_Cong.xlsx"
 
-# Tạo file Excel nếu chưa tồn tại
-if not os.path.exists(FILE_CHAM_CONG):
-    df_nv = pd.DataFrame([
-        {"Tên Nhân Viên": "Nguyễn Văn A", "Mức Lương / Giờ": 20000, "Trạng Thái": "Đang ở ngoài"},
-        {"Tên Nhân Viên": "Trần Thị B", "Mức Lương / Giờ": 25000, "Trạng Thái": "Đang ở ngoài"},
-    ])
-    df_nhat_ky = pd.DataFrame(columns=["Ngày", "Tên Nhân Viên", "Giờ Vào", "Giờ Ra", "Tổng Giờ Lập Trình", "Mức Lương Lúc Đó", "Thành Tiền"])
-    with pd.ExcelWriter(FILE_CHAM_CONG) as writer:
-        df_nv.to_excel(writer, sheet_name="Danh_Sach_NV", index=False)
-        df_nhat_ky.to_excel(writer, sheet_name="Nhat_Ky_Ca", index=False)
+# Hàm kiểm tra mật khẩu Admin
+def check_password():
+    password = st.sidebar.text_input("Mật khẩu Admin:", type="password")
+    if password == "123456": # Đổi mật khẩu tại đây
+        return True
+    return False
 
-# Hàm đọc dữ liệu
-@st.cache_data
+# Đọc dữ liệu
+@st.cache_data(ttl=1)
 def load_data():
     return pd.read_excel(FILE_CHAM_CONG, sheet_name="Danh_Sach_NV"), pd.read_excel(FILE_CHAM_CONG, sheet_name="Nhat_Ky_Ca")
 
 df_nv, df_nhat_ky = load_data()
 
-st.title("🕒 HỆ THỐNG CHẤM CÔNG")
+st.title("🕒 HỆ THỐNG QUẢN LÝ CHẤM CÔNG")
 
-# Khu vực nhân viên
-st.subheader("Dành cho nhân viên")
-ten_nv = st.selectbox("Chọn tên của bạn:", df_nv["Tên Nhân Viên"].tolist())
-
-col1, col2 = st.columns(2)
-if col1.button("BẮT ĐẦU VÀO CA"):
-    # Xử lý logic vào ca tương tự như code cũ của bạn
-    st.success(f"Chào {ten_nv}, đã ghi nhận vào ca!")
-
-if col2.button("KẾT THÚC RA CA"):
-    # Xử lý logic ra ca
-    st.info(f"Đã ghi nhận ra ca cho {ten_nv}")
-
-# Khu vực Admin
-st.divider()
-st.subheader("Khu vực quản lý (Admin)")
-password = st.text_input("Nhập mật khẩu Admin:", type="password")
-
-if password == "admin123":
-    tab1, tab2 = st.tabs(["Cập nhật lương", "Tính lương cuối tháng"])
+# --- GIAO DIỆN ADMIN ---
+if check_password():
+    st.sidebar.success("Đã đăng nhập quyền Admin")
     
-    with tab1:
-        new_name = st.text_input("Tên nhân viên:")
-        new_salary = st.number_input("Mức lương/giờ:", min_value=0)
-        if st.button("Cập nhật"):
-            st.write("Đã cập nhật!")
-            
-    with tab2:
-        month = st.selectbox("Chọn tháng:", range(1, 13))
-        if st.button("Tính lương"):
-            st.write(f"Bảng lương tháng {month}")
+    tabs = st.tabs(["Quản lý Nhân viên", "Chỉnh sửa Nhật ký", "Báo cáo Lương"])
+    
+    with tabs[0]:
+        st.subheader("Thêm/Sửa/Xóa Nhân viên")
+        # Thêm mới
+        with st.form("add_nv"):
+            ten = st.text_input("Tên nhân viên:")
+            luong = st.number_input("Mức lương/giờ:", value=20000)
+            if st.form_submit_button("Thêm nhân viên"):
+                new_df = pd.concat([df_nv, pd.DataFrame([{"Tên Nhân Viên": ten, "Mức Lương / Giờ": luong, "Trạng Thái": "Đang ở ngoài"}])])
+                new_df.to_excel(FILE_CHAM_CONG, sheet_name="Danh_Sach_NV", index=False)
+                st.rerun()
+
+        # Hiển thị và Xóa
+        st.write(df_nv)
+        if st.button("Xóa nhân viên cuối danh sách"):
+            df_nv = df_nv.iloc[:-1]
+            df_nv.to_excel(FILE_CHAM_CONG, sheet_name="Danh_Sach_NV", index=False)
+            st.rerun()
+
+    with tabs[1]:
+        st.subheader("Chỉnh sửa Nhật ký chấm công")
+        st.write("Sửa trực tiếp bên dưới (sau khi sửa hãy lưu file Excel hoặc dùng code cập nhật):")
+        edited_log = st.data_editor(df_nhat_ky)
+        if st.button("Lưu thay đổi nhật ký"):
+            with pd.ExcelWriter(FILE_CHAM_CONG, mode='a', if_sheet_exists='replace') as writer:
+                edited_log.to_excel(writer, sheet_name="Nhat_Ky_Ca", index=False)
+                st.success("Đã lưu!")
+
+    with tabs[2]:
+        st.subheader("Bảng lương (Định dạng VNĐ)")
+        # Định dạng tiền tệ
+        df_display = df_nhat_ky.copy()
+        df_display["Thành Tiền"] = df_display["Thành Tiền"].apply(lambda x: f"{x:,.0f}đ")
+        st.table(df_display)
+
 else:
-    st.warning("Vui lòng nhập đúng mật khẩu để truy cập quản trị.")
+    st.warning("Vui lòng nhập mật khẩu Admin ở thanh bên trái để thực hiện quyền quản lý.")
+
+# --- GIAO DIỆN NHÂN VIÊN (Ai cũng thấy) ---
+st.divider()
+st.subheader("Chấm công hàng ngày")
+ten_nv = st.selectbox("Chọn tên:", df_nv["Tên Nhân Viên"].tolist())
+if st.button("BẮT ĐẦU VÀO CA"):
+    st.write("Đã ghi nhận!")
