@@ -57,7 +57,7 @@ else:
     else:
         st.title(f"👋 Chào {user['username']}")
        if st.button("✅ VÀO CA"):
-    try:
+     try:
         data = {"username": str(user['username']), "gio_vao": str(datetime.now())}
         supabase.table("cham_cong").insert(data).execute()
         st.success("Đã vào ca!")
