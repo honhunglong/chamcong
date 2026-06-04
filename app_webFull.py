@@ -38,7 +38,7 @@ else:
                     st.success("Đã thêm!")
         
         data = supabase.table("nhan_vien").select("*").execute().data
-        st.table(pd.DataFrame(data)[['username', 'luong_gio']])
+        if data: st.table(pd.DataFrame(data)[['username', 'luong_gio']])
         
         target_del = st.text_input("Nhập username muốn xóa")
         if st.button("🗑️ Xóa nhân viên này"):
@@ -49,7 +49,7 @@ else:
     else:
         st.title(f"👋 Chào {user['username']}")         
         
-        # Xử lý VÀO CA
+        # XỬ LÝ VÀO CA
         if st.button("✅ VÀO CA"):
             try:
                 data = {"username": str(user['username']), "gio_vao": str(datetime.now())}
@@ -59,20 +59,21 @@ else:
             except Exception as e:
                 st.error(f"Lỗi vào ca: {e}")
 
-        # Xử lý RA CA
+        # XỬ LÝ RA CA
         if st.button("❌ RA CA"):
             try:
-                d = supabase.table("cham_cong").select("*").eq("username", user['username']).is_("gio_ra", "null").execute().data
-                if d:
+                res = supabase.table("cham_cong").select("ID, gio_vao").eq("username", user['username']).is_("gio_ra", "null").execute()
+                if res.data:
+                    d = res.data[0]
                     ra = datetime.now()
-                    vao = pd.to_datetime(d[0]['gio_vao'])
+                    vao = pd.to_datetime(d['gio_vao'])
                     gio = (ra - vao).total_seconds() / 3600
                     
                     supabase.table("cham_cong").update({
                         "gio_ra": str(ra),
                         "tong_gio": round(gio, 2),
                         "tong_tien": round(gio * user['luong_gio'], 2)
-                    }).eq("ID", d[0]['ID']).execute()
+                    }).eq("ID", d['ID']).execute()
                     st.success("Đã lưu ca làm việc!")
                     st.rerun()
                 else:
