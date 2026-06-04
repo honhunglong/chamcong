@@ -1,73 +1,90 @@
 import streamlit as st
 import pandas as pd
 import os
+import io
 from datetime import datetime
 
-# Tên file ổn định
-FILE_DATA = "Data_Cham_Cong_Final.xlsx"
-FILE_PASS = "pass.txt"
+FILE_DATA = "Data_Cham_Cong.xlsx"
 
-# Hàm khởi tạo hoặc phục hồi dữ liệu nếu file lỗi
-def get_data():
-    try:
-        # Nếu file tồn tại và đọc được, lấy dữ liệu
-        nv = pd.read_excel(FILE_DATA, sheet_name="NV")
-        ky = pd.read_excel(FILE_DATA, sheet_name="Ky")
-    except:
-        # Nếu file bị lỗi hoặc chưa có, tạo cấu trúc sạch
-        nv = pd.DataFrame(columns=["Tên NV", "Lương/Giờ", "Trạng Thái"])
-        ky = pd.DataFrame(columns=["Ngày", "Tên NV", "Giờ Vào", "Giờ Ra", "Tổng Giờ", "Tiền"])
+# --- KHỞI TẠO DỮ LIỆU ---
+def init_data():
+    if not os.path.exists(FILE_DATA):
         with pd.ExcelWriter(FILE_DATA, engine='openpyxl') as writer:
-            nv.to_excel(writer, sheet_name="NV", index=False)
-            ky.to_excel(writer, sheet_name="Ky", index=False)
-    return nv, ky
+            pd.DataFrame(columns=["Tên NV", "Lương/Giờ"]).to_excel(writer, sheet_name="NV", index=False)
+            pd.DataFrame(columns=["Ngày", "Tên NV", "Giờ Vào", "Giờ Ra", "Tổng Giờ", "Tiền"]).to_excel(writer, sheet_name="Ky", index=False)
+            # Lưu mật khẩu mặc định vào file ẩn hoặc biến môi trường (đơn giản hóa dùng biến session)
+    if "admin_pass" not in st.session_state: st.session_state.admin_pass = "888888"
 
-# Load dữ liệu vào app
-df_nv, df_ky = get_data()
+init_data()
 
-st.set_page_config(layout="wide")
+# --- GIAO DIỆN CHÍNH ---
+st.set_page_config(page_title="Hệ Thống Chấm Công", layout="wide")
 st.title("🕒 HỆ THỐNG QUẢN LÝ CHẤM CÔNG")
 
-# --- ADMIN ---
+# 1. GIAO DIỆN ADMIN (BÊN PHẢI)
 with st.sidebar:
-    st.header("🔑 Admin")
-    if st.text_input("Mật khẩu:", type="password") == "888888":
-        st.success("Đã đăng nhập")
-        ten = st.text_input("Thêm nhân viên mới:")
-        if st.button("Thêm"):
-            new_nv = pd.concat([df_nv, pd.DataFrame([{"Tên NV": ten, "Lương/Giờ": 20000, "Trạng Thái": "Ngoài"}])], ignore_index=True)
-            with pd.ExcelWriter(FILE_DATA, engine='openpyxl') as writer:
-                new_nv.to_excel(writer, sheet_name="NV", index=False)
-                df_ky.to_excel(writer, sheet_name="Ky", index=False)
-            st.rerun()
-    else:
-        st.info("Nhập mật khẩu Admin.")
-
-# --- CHẤM CÔNG ---
-if not df_nv.empty:
-    ten_chon = st.selectbox("Chọn tên:", df_nv["Tên NV"].tolist())
-    c1, c2 = st.columns(2)
+    st.header("🔑 Cấu hình Admin")
+    password = st.text_input("Nhập mật khẩu Admin:", type="password")
     
+    if password == st.session_state.admin_pass:
+        st.success("Đã đăng nhập Admin")
+        # Đổi mật khẩu
+        new_pass = st.text_input("Đổi mật khẩu mới:", type="password")
+        if st.button("Cập nhật mật khẩu"):
+            st.session_state.admin_pass = new_pass
+            st.info("Mật khẩu đã đổi!")
+            
+        st.divider()
+        st.subheader("Quản lý Nhân viên")
+        df_nv = pd.read_excel(FILE_DATA, sheet_name="NV")
+        ten_moi = st.text_input("Tên NV mới:")
+        luong_moi = st.number_input("Lương/Giờ:", value=20000)
+        
+        if st.button("Thêm NV"):
+            new_row = pd.DataFrame([{"Tên NV": ten_moi, "Lương/Giờ": luong_moi}])
+            pd.concat([df_nv, new_row]).to_excel(FILE_DATA, sheet_name="NV", index=False)
+            st.rerun()
+
+# 2. GIAO DIỆN NHÂN VIÊN (CHÍNH)
+df_nv = pd.read_excel(FILE_DATA, sheet_name="NV")
+df_ky = pd.read_excel(FILE_DATA, sheet_name="Ky")
+
+if not df_nv.empty:
+    ten_chon = st.selectbox("Chọn tên của bạn:", df_nv["Tên NV"].tolist())
+    
+    c1, c2 = st.columns(2)
     if c1.button("VÀO CA"):
-        now = datetime.now().strftime("%H:%M:%S")
-        new_row = pd.DataFrame([{"Ngày": datetime.now().strftime("%Y-%m-%d"), "Tên NV": ten_chon, "Giờ Vào": now, "Giờ Ra": "", "Tổng Giờ": 0, "Tiền": 0}])
-        df_ky = pd.concat([df_ky, new_row], ignore_index=True)
-        with pd.ExcelWriter(FILE_DATA, engine='openpyxl') as writer:
-            df_nv.to_excel(writer, sheet_name="NV", index=False)
-            df_ky.to_excel(writer, sheet_name="Ky", index=False)
-        st.success(f"Đã ghi VÀO lúc {now}")
+        now = datetime.now()
+        new_row = pd.DataFrame([{"Ngày": now.strftime("%Y-%m-%d"), "Tên NV": ten_chon, "Giờ Vào": now.strftime("%H:%M:%S"), "Giờ Ra": "", "Tổng Giờ": 0, "Tiền": 0}])
+        pd.concat([df_ky, new_row]).to_excel(FILE_DATA, sheet_name="Ky", index=False)
+        st.success("Đã ghi VÀO CA!")
         st.rerun()
 
     if c2.button("RA CA"):
-        now = datetime.now().strftime("%H:%M:%S")
-        # Tìm dòng của nhân viên đang trống giờ ra
         mask = (df_ky["Tên NV"] == ten_chon) & (df_ky["Giờ Ra"] == "")
         if mask.any():
-            df_ky.loc[df_ky[mask].index[-1], "Giờ Ra"] = now
-            with pd.ExcelWriter(FILE_DATA, engine='openpyxl') as writer:
-                df_nv.to_excel(writer, sheet_name="NV", index=False)
-                df_ky.to_excel(writer, sheet_name="Ky", index=False)
-            st.success(f"Đã ghi RA lúc {now}")
+            idx = df_ky[mask].index[-1]
+            gio_vao = datetime.strptime(df_ky.loc[idx, "Giờ Vào"], "%H:%M:%S")
+            now = datetime.now()
+            tong_gio = (now - gio_vao).total_seconds() / 3600
+            luong_gio = df_nv.loc[df_nv["Tên NV"] == ten_chon, "Lương/Giờ"].values[0]
+            
+            df_ky.loc[idx, "Giờ Ra"] = now.strftime("%H:%M:%S")
+            df_ky.loc[idx, "Tổng Giờ"] = round(tong_gio, 2)
+            df_ky.loc[idx, "Tiền"] = round(tong_gio * luong_gio, 0)
+            df_ky.to_excel(FILE_DATA, sheet_name="Ky", index=False)
+            st.success(f"Đã RA CA. Tổng thời gian: {round(tong_gio, 2)} giờ.")
             st.rerun()
-        else:
-            st.warning("Không tìm thấy ca vào!")
+
+# 3. BÁO CÁO ADMIN (CHỈ XUẤT HIỆN KHI ĐĂNG NHẬP PASS)
+if password == st.session_state.admin_pass:
+    st.divider()
+    st.subheader("📊 Bảng Lương Tổng Hợp")
+    df_tong = df_ky.groupby("Tên NV").agg({"Tổng Giờ": "sum", "Tiền": "sum"}).reset_index()
+    st.dataframe(df_tong)
+    
+    # Xuất Excel
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df_tong.to_excel(writer, index=False, sheet_name="Bang_Luong")
+    st.download_button("📥 Tải Bảng Lương Excel", data=output.getvalue(), file_name="Bang_Luong.xlsx")
