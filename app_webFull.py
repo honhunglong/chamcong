@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 from datetime import datetime
+import io
 
 # Kết nối
 URL = "https://aqwkngqmnnikmhwyxysa.supabase.co"
@@ -10,9 +11,8 @@ supabase = create_client(URL, KEY)
 
 if 'user' not in st.session_state: st.session_state.user = None
 
-# GIAO DIỆN ĐĂNG NHẬP
 if not st.session_state.user:
-    st.title("ĐĂNG NHẬP HỆ THỐNG")
+    st.title("ĐĂNG NHẬP")
     u = st.text_input("Username")
     p = st.text_input("Password", type="password")
     if st.button("Đăng nhập"):
@@ -20,63 +20,50 @@ if not st.session_state.user:
         if res.data:
             st.session_state.user = res.data[0]
             st.rerun()
-        else:
-            st.error("Sai thông tin!")
+        else: st.error("Sai thông tin!")
 else:
     user = st.session_state.user
-    
-    # GIAO DIỆN ADMIN
     if user['role'] == 'admin':
-        st.title("⚙️ QUẢN TRỊ NHÂN VIÊN")
-        with st.expander("➕ Thêm nhân viên mới"):
-            with st.form("them_moi"):
-                new_u = st.text_input("Username")
-                new_p = st.text_input("Password")
-                new_l = st.number_input("Lương/giờ", value=0.0)
-                if st.form_submit_button("Lưu"):
-                    supabase.table("nhan_vien").insert({"username": new_u, "password": new_p, "role": "nhan_vien", "luong_gio": new_l}).execute()
-                    st.success("Đã thêm!")
-        
-        data = supabase.table("nhan_vien").select("*").execute().data
-        if data: st.table(pd.DataFrame(data)[['username', 'luong_gio']])
-        
-        target_del = st.text_input("Nhập username muốn xóa")
-        if st.button("🗑️ Xóa nhân viên này"):
-            supabase.table("nhan_vien").delete().eq("username", target_del).execute()
-            st.rerun()
-
-    # GIAO DIỆN NHÂN VIÊN
+        st.title("⚙️ QUẢN TRỊ")
+        # Tính năng xuất file Excel
+        data = supabase.table("cham_cong").select("*").execute().data
+        if data:
+            df = pd.DataFrame(data)
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False)
+            st.download_button("📥 Tải lịch sử chấm công (Excel)", data=output.getvalue(), file_name="cham_cong.xlsx", mime="application/vnd.ms-excel")
     else:
         st.title(f"👋 Chào {user['username']}")         
         
-        # XỬ LÝ VÀO CA
+        # VÀO CA - Dùng ID tự sinh từ thời gian để tránh lỗi NOT NULL
         if st.button("✅ VÀO CA"):
             try:
-                data = {"username": str(user['username']), "gio_vao": str(datetime.now())}
+                data = {
+                    "ID": int(datetime.now().timestamp() * 1000), 
+                    "username": str(user['username']), 
+                    "gio_vao": str(datetime.now().astimezone()) # Giờ chuẩn Việt Nam
+                }
                 supabase.table("cham_cong").insert(data).execute()
                 st.success("Đã vào ca!")
                 st.rerun()
-            except Exception as e:
-                st.error(f"Lỗi vào ca: {e}")
+            except Exception as e: st.error(f"Lỗi: {e}")
 
-        # XỬ LÝ RA CA
+        # RA CA
         if st.button("❌ RA CA"):
             try:
                 res = supabase.table("cham_cong").select("ID, gio_vao").eq("username", user['username']).is_("gio_ra", "null").execute()
                 if res.data:
                     d = res.data[0]
-                    ra = datetime.now()
-                    vao = pd.to_datetime(d['gio_vao'])
+                    ra = datetime.now().astimezone()
+                    vao = pd.to_datetime(d['gio_vao']).astimezone()
                     gio = (ra - vao).total_seconds() / 3600
-                    
                     supabase.table("cham_cong").update({
                         "gio_ra": str(ra),
                         "tong_gio": round(gio, 2),
                         "tong_tien": round(gio * user['luong_gio'], 2)
                     }).eq("ID", d['ID']).execute()
-                    st.success("Đã lưu ca làm việc!")
+                    st.success("Đã ra ca!")
                     st.rerun()
-                else:
-                    st.warning("Không tìm thấy ca làm việc đang mở!")
-            except Exception as e:
-                st.error(f"Lỗi ra ca: {e}")
+                else: st.warning("Không tìm thấy ca mở!")
+            except Exception as e: st.error(f"Lỗi: {e}")
