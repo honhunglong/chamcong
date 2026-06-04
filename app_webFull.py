@@ -56,9 +56,44 @@ else:
     # GIAO DIỆN NHÂN VIÊN
     else:
         st.title(f"👋 Chào {user['username']}")
-        if st.button("✅ VÀO CA"):
-            supabase.table("cham_cong").insert({"username": user['username'], "gio_vao": str(datetime.now())}).execute()
+       if st.button("✅ VÀO CA"):
+    try:
+        data = {"username": str(user['username']), "gio_vao": str(datetime.now())}
+        supabase.table("cham_cong").insert(data).execute()
+        st.success("Đã vào ca!")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Lỗi vào ca: {e}")
+
+# --- XỬ LÝ RA CA ---
+if st.button("❌ RA CA"):
+    try:
+        # 1. Tìm dòng mới nhất của user chưa có 'gio_ra'
+        d = supabase.table("cham_cong").select("*").eq("username", user['username']).is_("gio_ra", "null").execute()
         
+        if d.data:
+            # 2. Lấy ID của dòng đó
+            record_id = d.data[0]['ID']
+            gio_vao_dt = pd.to_datetime(d.data[0]['gio_vao'])
+            gio_ra_dt = datetime.now()
+            
+            # 3. Tính toán
+            gio_lam = (gio_ra_dt - gio_vao_dt).total_seconds() / 3600
+            
+            # 4. Cập nhật vào đúng ID đó
+            supabase.table("cham_cong").update({
+                "gio_ra": str(gio_ra_dt),
+                "tong_gio": round(gio_lam, 2)
+            }).eq("ID", record_id).execute()
+            
+            st.success("Đã ra ca!")
+            st.rerun()
+        else:
+            st.warning("Không tìm thấy ca làm việc đang mở!")
+    except Exception as e:
+        st.error(f"Lỗi ra ca: {e}")
+                # Nếu có lỗi, nó sẽ in ra màn hình để bạn biết nguyên nhân
+                st.error(f"Lỗi Database: {e}")
         if st.button("❌ RA CA"):
             d = supabase.table("cham_cong").select("*").eq("username", user['username']).is_("gio_ra", "null").execute().data
             if d:
