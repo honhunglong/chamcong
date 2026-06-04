@@ -2,34 +2,32 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client
-from datetime import datetime
 
-# 1. THIẾT LẬP KẾT NỐI - Đảm bảo chỉ dùng ký tự ASCII tiêu chuẩn
+# Dùng đúng URL dự án của bạn
 SUPABASE_URL = "https://aqwkngqmnnikmhwyxysa.supabase.co"
-SUPABASE_KEY = "DÁN_MÃ_ANON_PUBLIC_CỦA_BẠN_VÀO_ĐÂY" 
 
+# Dán khóa 'service_role' bạn vừa copy ở Bước 1 vào đây
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxd2tuZ3Ftbm5pa21od3l4eXNhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDU0MDA5MSwiZXhwIjoyMDk2MTE2MDkxfQ.u9888upVfSJCOWE8-fVR8lM4v8lmseImD1vTib54cPE"
+
+# Khởi tạo client
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-st.title("HE THONG QUAN LY CHAM CONG") # Tạm thời bỏ dấu tiếng Việt ở tiêu đề để loại trừ lỗi encoding
+st.title("QUAN LY CHAM CONG")
 
 try:
-    # 2. Lấy dữ liệu Nhân Viên
-    response_nv = supabase.table("nhan_vien").select("*").execute()
-    df_nv = pd.DataFrame(response_nv.data)
+    # Lấy dữ liệu từ bảng 'nhan_vien'
+    response = supabase.table("nhan_vien").select("*").execute()
+    data = response.data
     
-    ten_chon = st.selectbox("Chon ten nhan vien:", df_nv["ten_nv"].tolist())
-
-    if st.button("VAO CA"):
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        data = {"ten_nv": ten_chon, "gio_vao": now}
-        supabase.table("cham_cong").insert(data).execute()
-        st.success("Da ghi nhan!")
+    if data:
+        df_nv = pd.DataFrame(data)
+        ten_chon = st.selectbox("Chon nhan vien:", df_nv["ten_nv"].tolist())
+        
+        if st.button("VAO CA"):
+            supabase.table("cham_cong").insert({"ten_nv": ten_chon}).execute()
+            st.success("Da cham cong!")
+    else:
+        st.warning("Khong tim thay du lieu nhan vien trong bang.")
 
 except Exception as e:
-    st.error(f"Loi ket noi: {e}")
-
-# 3. Hiển thị lịch sử (Không dùng dấu tiếng Việt ở tiêu đề)
-st.subheader("Lich su gan day")
-response_lichsu = supabase.table("cham_cong").select("*").order("gio_vao", desc=True).limit(5).execute()
-df_lichsu = pd.DataFrame(response_lichsu.data)
-st.table(df_lichsu)
+    st.error(f"Loi ket noi: {str(e)}")
